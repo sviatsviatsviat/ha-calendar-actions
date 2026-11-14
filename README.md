@@ -1,3 +1,5 @@
+![Calendar Actions](custom_components/calendar_actions/brand/logo.png)
+
 # Calendar Actions for Home Assistant
 
 Home Assistant custom integration that adds the calendar actions the built-in `calendar.*` actions lack: create **recurring** events, **update** and **delete** events (a whole series, one instance, or an instance and all following ones), and **list** events with the identifiers needed to do that. The actions work from scripts, automations and Assist (LLM).
@@ -115,14 +117,17 @@ Changes only the fields you pass. Everything else stays as it is.
 |---|---|---|
 | `entity_id` | yes | Calendar entity |
 | `uid` | yes | `uid` from `list_events` |
-| `recurrence_id` | no | `recurrence_id` from `list_events` (see the modes below) |
+| `recurrence_id` | recurring events | `recurrence_id` from `list_events` (see the modes below) |
 | `recurrence_range` | no | `THISANDFUTURE` (needs `recurrence_id`) |
 | `summary`, `dtstart`, `dtend`, `rrule`, `description`, `location` | at least one | New values |
 
 - If you pass `dtstart` without `dtend`, the event keeps its duration.
 - An empty `description` or `location` clears it.
+- **A recurring event always needs `recurrence_id`.** Change one instance (`recurrence_id` alone), or an instance and everything after it (`recurrence_id` + `THISANDFUTURE`). To change the whole series, use its first instance with `THISANDFUTURE`. Calendars don't report a series' original start, so the action never guesses it: a guess could shift the series or drop past instances.
+- If a series has individually changed instances (for example one moved to another day), `THISANDFUTURE` from its earliest instance is refused, because the calendar would remove those changed instances. Start from a later instance, or update the changed instances separately. Changed instances keep their own values when the rest of the series changes.
+- A new `rrule` for a recurring event needs `THISANDFUTURE`.
 - A recurrence rule can't be removed from a series, because calendars keep the existing rule. To end a series, set `UNTIL`/`COUNT` or delete the remaining instances.
-- To update a whole recurring series, the action needs the series' first instance. It searches about five years back. If the series may have started before that, the action asks you to pass `dtstart` and `dtend` for the whole series instead of guessing.
+- Updates to the same calendar run one at a time, so concurrent patches of different fields don't overwrite each other.
 
 ```yaml
 action: calendar_actions.update_event
@@ -147,9 +152,9 @@ data:
 
 | `recurrence_id` | `recurrence_range` | Applies to |
 |---|---|---|
-| — | — | The whole event or series |
+| — | — | Delete: the whole event or series. Update: a non-recurring event only |
 | set | — | That single instance |
-| set | `THISANDFUTURE` | That instance and all following ones |
+| set | `THISANDFUTURE` | That instance and all following ones (the whole series from its first instance) |
 
 `recurrence_range` without `recurrence_id` is rejected, so a mistake can't silently affect a whole series.
 
