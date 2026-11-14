@@ -1,0 +1,8 @@
+# Minimal Home Assistant config for local integration development.
+# Add a Local Calendar and Calendar Actions from Settings → Devices & services.
+frontend:
+
+logger:
+  default: info
+  logs:
+    custom_components.calendar_actions: debug

@@ -1,0 +1,6 @@
+debugpy==1.8.22
+homeassistant==2026.10.4
+# Local Calendar's requirement in the pinned Home Assistant (tests use it).
+ical==14.3.0
+pytest-homeassistant-custom-component==0.13.375
+ruff==0.17.4
