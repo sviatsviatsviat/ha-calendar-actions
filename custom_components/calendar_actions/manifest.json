@@ -1,0 +1,14 @@
+{
+  "domain": "calendar_actions",
+  "name": "Calendar Actions",
+  "codeowners": ["@sviatsviatsviat"],
+  "config_flow": true,
+  "dependencies": ["calendar"],
+  "documentation": "https://github.com/sviatsviatsviat/ha-calendar-actions",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/sviatsviatsviat/ha-calendar-actions/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

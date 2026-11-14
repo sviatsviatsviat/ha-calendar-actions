@@ -1,0 +1,122 @@
+create_event:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          domain: calendar
+          supported_features:
+            - calendar.CalendarEntityFeature.CREATE_EVENT
+    summary:
+      required: true
+      example: Swimming lesson
+      selector:
+        text:
+    dtstart:
+      required: true
+      example: "2026-10-26T19:00:00+01:00"
+      selector:
+        text:
+    dtend:
+      required: true
+      example: "2026-10-26T20:00:00+01:00"
+      selector:
+        text:
+    rrule:
+      example: FREQ=WEEKLY;BYDAY=MO
+      selector:
+        text:
+    description:
+      selector:
+        text:
+          multiline: true
+    location:
+      selector:
+        text:
+
+update_event:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          domain: calendar
+          supported_features:
+            - calendar.CalendarEntityFeature.UPDATE_EVENT
+    uid:
+      required: true
+      selector:
+        text:
+    recurrence_id:
+      example: "20261026T190000"
+      selector:
+        text:
+    recurrence_range:
+      selector:
+        select:
+          options:
+            - THISANDFUTURE
+    summary:
+      selector:
+        text:
+    dtstart:
+      example: "2026-10-26T19:00:00+01:00"
+      selector:
+        text:
+    dtend:
+      example: "2026-10-26T20:00:00+01:00"
+      selector:
+        text:
+    rrule:
+      example: FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH
+      selector:
+        text:
+    description:
+      selector:
+        text:
+          multiline: true
+    location:
+      selector:
+        text:
+
+delete_event:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          domain: calendar
+          supported_features:
+            - calendar.CalendarEntityFeature.DELETE_EVENT
+    uid:
+      required: true
+      selector:
+        text:
+    recurrence_id:
+      example: "20261026T190000"
+      selector:
+        text:
+    recurrence_range:
+      selector:
+        select:
+          options:
+            - THISANDFUTURE
+
+list_events:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          domain: calendar
+    start:
+      example: "2026-10-26T00:00:00+01:00"
+      selector:
+        datetime:
+    end:
+      example: "2026-11-02T00:00:00+01:00"
+      selector:
+        datetime:
+    duration:
+      selector:
+        duration:

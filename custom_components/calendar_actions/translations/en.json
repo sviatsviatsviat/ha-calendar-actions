@@ -1,0 +1,173 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Add the Calendar Actions services: create recurring events, and update, delete and list events on calendars that support it."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Calendar Actions is already configured."
+    }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "Calendar {entity_id} was not found."
+    },
+    "entity_unavailable": {
+      "message": "Calendar {entity_id} is unavailable."
+    },
+    "feature_not_supported": {
+      "message": "Calendar {entity_id} does not support {feature}."
+    },
+    "invalid_event": {
+      "message": "Invalid event: {error}"
+    },
+    "backend_rejected": {
+      "message": "The calendar rejected the event: {error}"
+    },
+    "range_requires_recurrence_id": {
+      "message": "recurrence_range requires recurrence_id."
+    },
+    "invalid_range": {
+      "message": "The end of the time range must be after its start."
+    },
+    "event_not_found": {
+      "message": "No event with uid {uid} and recurrence_id {recurrence_id} was found."
+    },
+    "series_start_unknown": {
+      "message": "The series {uid} may have started before the search window, so its start is unknown. Pass dtstart and dtend for the whole series."
+    },
+    "dtend_required": {
+      "message": "dtstart changes between a date and a date-time; pass dtend as well."
+    },
+    "nothing_to_update": {
+      "message": "Pass at least one event field to update."
+    }
+  },
+  "services": {
+    "create_event": {
+      "name": "Create event",
+      "description": "Creates a calendar event, optionally recurring via an RFC 5545 recurrence rule.",
+      "fields": {
+        "entity_id": {
+          "name": "Calendar",
+          "description": "The calendar entity to add the event to."
+        },
+        "summary": {
+          "name": "Summary",
+          "description": "Event title."
+        },
+        "dtstart": {
+          "name": "Start",
+          "description": "Start as an ISO 8601 date (all-day event, e.g. 2026-10-26) or date-time with offset (e.g. 2026-10-26T19:00:00+01:00)."
+        },
+        "dtend": {
+          "name": "End",
+          "description": "End, the same type as start. For an all-day event it is the day after the last day (exclusive)."
+        },
+        "rrule": {
+          "name": "Recurrence rule",
+          "description": "RFC 5545 RRULE without the \"RRULE:\" prefix. FREQ must be DAILY, WEEKLY, MONTHLY or YEARLY. Examples: FREQ=WEEKLY;BYDAY=MO | FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH | FREQ=MONTHLY;BYDAY=3SA | FREQ=DAILY;COUNT=10 | FREQ=YEARLY;UNTIL=20301231."
+        },
+        "description": {
+          "name": "Description",
+          "description": "Event description."
+        },
+        "location": {
+          "name": "Location",
+          "description": "Event location."
+        }
+      }
+    },
+    "update_event": {
+      "name": "Update event",
+      "description": "Updates an event, a single instance of a recurring event, or an instance and all following ones. Only the fields passed change; get uid and recurrence_id from list_events.",
+      "fields": {
+        "entity_id": {
+          "name": "Calendar",
+          "description": "The calendar entity that holds the event."
+        },
+        "uid": {
+          "name": "UID",
+          "description": "Event uid from list_events."
+        },
+        "recurrence_id": {
+          "name": "Recurrence ID",
+          "description": "Instance recurrence_id from list_events. Omit to update the whole event or series."
+        },
+        "recurrence_range": {
+          "name": "Recurrence range",
+          "description": "THISANDFUTURE updates the instance given by recurrence_id and all following instances. Omit to update only that instance."
+        },
+        "summary": {
+          "name": "Summary",
+          "description": "New event title."
+        },
+        "dtstart": {
+          "name": "Start",
+          "description": "New start (ISO 8601 date or date-time with offset). If end is omitted, the event keeps its duration."
+        },
+        "dtend": {
+          "name": "End",
+          "description": "New end, the same type as start."
+        },
+        "rrule": {
+          "name": "Recurrence rule",
+          "description": "New RFC 5545 RRULE without the \"RRULE:\" prefix, e.g. FREQ=WEEKLY;BYDAY=MO,WE. Only for the whole series or THISANDFUTURE."
+        },
+        "description": {
+          "name": "Description",
+          "description": "New description; an empty string clears it."
+        },
+        "location": {
+          "name": "Location",
+          "description": "New location; an empty string clears it."
+        }
+      }
+    },
+    "delete_event": {
+      "name": "Delete event",
+      "description": "Deletes an event, a single instance of a recurring event, or an instance and all following ones. Get uid and recurrence_id from list_events.",
+      "fields": {
+        "entity_id": {
+          "name": "Calendar",
+          "description": "The calendar entity that holds the event."
+        },
+        "uid": {
+          "name": "UID",
+          "description": "Event uid from list_events."
+        },
+        "recurrence_id": {
+          "name": "Recurrence ID",
+          "description": "Instance recurrence_id from list_events. Omit to delete the whole event or series."
+        },
+        "recurrence_range": {
+          "name": "Recurrence range",
+          "description": "THISANDFUTURE deletes the instance given by recurrence_id and all following instances. Omit to delete only that instance."
+        }
+      }
+    },
+    "list_events": {
+      "name": "List events",
+      "description": "Lists events in a time range with uid, recurrence_id and rrule, which update_event and delete_event need.",
+      "fields": {
+        "entity_id": {
+          "name": "Calendar",
+          "description": "The calendar entity to list events from."
+        },
+        "start": {
+          "name": "Start",
+          "description": "Start of the range; defaults to now."
+        },
+        "end": {
+          "name": "End",
+          "description": "End of the range. Pass either end or duration."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Length of the range from start. Pass either end or duration."
+        }
+      }
+    }
+  }
+}
