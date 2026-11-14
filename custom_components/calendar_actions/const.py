@@ -29,8 +29,6 @@ LIST_EVENT_FIELDS: Final = (
     "location",
 )
 
-# update_event looks up the current event before merging a partial patch.
-# An instance is searched near its recurrence_id first, then in the wide window.
-INSTANCE_SEARCH_MARGIN: Final = timedelta(days=2)
+# update_event looks up the current event in this window before merging a patch.
 EVENT_SEARCH_LOOKBACK: Final = timedelta(days=5 * 366)
 EVENT_SEARCH_LOOKAHEAD: Final = timedelta(days=5 * 366)

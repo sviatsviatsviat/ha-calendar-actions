@@ -34,14 +34,17 @@
     "event_not_found": {
       "message": "No event with uid {uid} and recurrence_id {recurrence_id} was found."
     },
-    "series_start_unknown": {
-      "message": "The series {uid} may have started before the search window, so its start is unknown. Pass dtstart and dtend for the whole series."
-    },
     "dtend_required": {
       "message": "dtstart changes between a date and a date-time; pass dtend as well."
     },
     "nothing_to_update": {
       "message": "Pass at least one event field to update."
+    },
+    "series_update_requires_instance": {
+      "message": "Event {uid} is recurring. Pass the recurrence_id of an instance from list_events: alone to change that instance, or with recurrence_range THISANDFUTURE to change it and all following instances."
+    },
+    "series_has_changed_instances": {
+      "message": "Series {uid} has individually changed instances, which a change from its first instance would remove. Start from a later instance, or update the changed instances separately."
     }
   },
   "services": {
@@ -81,7 +84,7 @@
     },
     "update_event": {
       "name": "Update event",
-      "description": "Updates an event, a single instance of a recurring event, or an instance and all following ones. Only the fields passed change; get uid and recurrence_id from list_events.",
+      "description": "Updates an event, a single instance of a recurring event, or an instance and all following ones. Only the fields passed change. Get uid and recurrence_id from list_events; a recurring event always needs recurrence_id.",
       "fields": {
         "entity_id": {
           "name": "Calendar",
@@ -93,11 +96,11 @@
         },
         "recurrence_id": {
           "name": "Recurrence ID",
-          "description": "Instance recurrence_id from list_events. Omit to update the whole event or series."
+          "description": "Instance recurrence_id from list_events. Required for a recurring event; omit only for a non-recurring event."
         },
         "recurrence_range": {
           "name": "Recurrence range",
-          "description": "THISANDFUTURE updates the instance given by recurrence_id and all following instances. Omit to update only that instance."
+          "description": "THISANDFUTURE updates the instance given by recurrence_id and all following instances; from the first instance it updates the whole series. Omit to update only that instance."
         },
         "summary": {
           "name": "Summary",
@@ -113,7 +116,7 @@
         },
         "rrule": {
           "name": "Recurrence rule",
-          "description": "New RFC 5545 RRULE without the \"RRULE:\" prefix, e.g. FREQ=WEEKLY;BYDAY=MO,WE. Only for the whole series or THISANDFUTURE."
+          "description": "New RFC 5545 RRULE without the \"RRULE:\" prefix, e.g. FREQ=WEEKLY;BYDAY=MO,WE. Needs recurrence_range THISANDFUTURE for a recurring event."
         },
         "description": {
           "name": "Description",

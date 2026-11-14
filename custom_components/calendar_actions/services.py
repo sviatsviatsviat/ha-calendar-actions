@@ -7,8 +7,10 @@ validated with the calendar component's own WebSocket event schema.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
-from collections.abc import Awaitable, Callable
+from collections import defaultdict
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 import probatio
@@ -49,6 +51,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 
 from .const import (
     ATTR_DURATION,
@@ -57,7 +60,6 @@ from .const import (
     DOMAIN,
     EVENT_SEARCH_LOOKAHEAD,
     EVENT_SEARCH_LOOKBACK,
-    INSTANCE_SEARCH_MARGIN,
     LIST_EVENT_FIELDS,
     RECURRENCE_RANGE_THIS_AND_FUTURE,
     SERVICE_CREATE_EVENT,
@@ -65,6 +67,8 @@ from .const import (
     SERVICE_LIST_EVENTS,
     SERVICE_UPDATE_EVENT,
 )
+
+_LOCKS: HassKey[defaultdict[str, asyncio.Lock]] = HassKey(f"{DOMAIN}_locks")
 
 EVENT_FIELDS = (
     EVENT_SUMMARY,
@@ -292,37 +296,27 @@ async def _async_list_events(call: ServiceCall) -> ServiceResponse:
     return {"events": [_event_to_response(event) for event in events]}
 
 
-def _parse_recurrence_id(value: str) -> datetime.datetime | None:
-    """Return the local instant an iCalendar RECURRENCE-ID refers to, if parseable."""
-    text = value.strip()
-    for fmt in ("%Y%m%dT%H%M%SZ", "%Y%m%dT%H%M%S", "%Y%m%d"):
-        try:
-            parsed = datetime.datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-        if fmt.endswith("Z"):
-            return dt_util.as_local(parsed.replace(tzinfo=datetime.UTC))
-        return parsed.replace(tzinfo=dt_util.get_default_time_zone())
-    return None
-
-
-async def _matching_events(
-    hass: HomeAssistant,
-    entity: CalendarEntity,
-    uid: str,
-    recurrence_id: str | None,
-    start: datetime.datetime,
-    end: datetime.datetime,
+async def _event_instances(
+    hass: HomeAssistant, entity: CalendarEntity, uid: str
 ) -> list[CalendarEvent]:
-    """Return instances of an event in a window, earliest first."""
-    events = await entity.async_get_events(hass, start, end)
-    matches = [
-        event
-        for event in events
-        if event.uid == uid
-        and (recurrence_id is None or event.recurrence_id == recurrence_id)
-    ]
-    return sorted(matches, key=lambda event: event.start_datetime_local)
+    """Return the instances of an event in the search window, earliest first."""
+    now = dt_util.now()
+    events = await entity.async_get_events(
+        hass, now - EVENT_SEARCH_LOOKBACK, now + EVENT_SEARCH_LOOKAHEAD
+    )
+    return sorted(
+        (event for event in events if event.uid == uid),
+        key=lambda event: event.start_datetime_local,
+    )
+
+
+def _is_changed_instance(event: CalendarEvent) -> bool:
+    """Return True for an individually changed (detached) instance of a series.
+
+    Expanded instances carry the series rule; a detached instance is stored as
+    its own event with a recurrence_id and no rule.
+    """
+    return bool(event.recurrence_id) and not event.rrule
 
 
 def _event_not_found(uid: str, recurrence_id: str | None) -> ServiceValidationError:
@@ -341,51 +335,47 @@ async def _find_current_event(
     entity: CalendarEntity,
     uid: str,
     recurrence_id: str | None,
-    need_series_start: bool,
+    recurrence_range: str | None,
 ) -> CalendarEvent:
-    """Find the event (or instance) an update applies to.
+    """Find the event or instance an update applies to, refusing unsafe edits.
 
-    With recurrence_id the matching instance is returned. Without it the
-    earliest instance in the search window is returned; when the caller relies
-    on it as the series start (need_series_start), an error is raised if the
-    series may have started before the window.
+    The calendar entity API does not expose a series' original start, and a
+    calendar applies a whole-series edit to the series start it is given (and,
+    for Local Calendar, drops changed instances). So a recurring series is only
+    edited from a known instance: alone, or with THISANDFUTURE.
     """
-    if recurrence_id and (instant := _parse_recurrence_id(recurrence_id)):
-        matches = await _matching_events(
-            hass,
-            entity,
-            uid,
-            recurrence_id,
-            instant - INSTANCE_SEARCH_MARGIN,
-            instant + INSTANCE_SEARCH_MARGIN,
-        )
-        if matches:
-            return matches[0]
-
-    now = dt_util.now()
-    window_start = now - EVENT_SEARCH_LOOKBACK
-    matches = await _matching_events(
-        hass, entity, uid, recurrence_id, window_start, now + EVENT_SEARCH_LOOKAHEAD
-    )
-    if not matches:
+    instances = await _event_instances(hass, entity, uid)
+    if not instances:
         raise _event_not_found(uid, recurrence_id)
 
-    first = matches[0]
-    if recurrence_id is None and need_series_start and first.rrule:
-        # Instances before the window are invisible. If the gap from the window
-        # start to the first visible instance is shorter than the series
-        # interval, an earlier instance may exist and the true start is unknown.
-        if len(matches) > 1:
-            gap = matches[1].start_datetime_local - first.start_datetime_local
-        else:
-            gap = EVENT_SEARCH_LOOKBACK
-        if first.start_datetime_local - window_start < gap:
+    if recurrence_id is None:
+        if any(event.rrule or event.recurrence_id for event in instances):
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
-                translation_key="series_start_unknown",
+                translation_key="series_update_requires_instance",
                 translation_placeholders={"uid": uid},
             )
-    return first
+        return instances[0]
+
+    target = next(
+        (event for event in instances if event.recurrence_id == recurrence_id), None
+    )
+    if target is None:
+        raise _event_not_found(uid, recurrence_id)
+
+    if (
+        recurrence_range
+        and target is instances[0]
+        and any(_is_changed_instance(event) for event in instances)
+    ):
+        # From what may be the series start, THISANDFUTURE is a whole-series
+        # edit, which would drop the individually changed instances.
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="series_has_changed_instances",
+            translation_placeholders={"uid": uid},
+        )
+    return target
 
 
 def _normalize_times(data: dict[str, Any]) -> dict[str, Any]:
@@ -450,13 +440,7 @@ async def _async_update_event(call: ServiceCall) -> None:
 
     new_rrule = patch.get(EVENT_RRULE)
     current = await _find_current_event(
-        call.hass,
-        entity,
-        uid,
-        recurrence_id,
-        # The first instance must be the real series start when it supplies the
-        # series times, or when it is used to replace the rule (below).
-        need_series_start=EVENT_START not in patch or new_rrule is not None,
+        call.hass, entity, uid, recurrence_id, recurrence_range
     )
     start, end = _merge_times(current, patch)
     if isinstance(start, datetime.datetime) and start.tzinfo is not None:
@@ -479,19 +463,6 @@ async def _async_update_event(call: ServiceCall) -> None:
     elif current.rrule and not (recurrence_id and not recurrence_range):
         merged[EVENT_RRULE] = current.rrule
 
-    if (
-        recurrence_id is None
-        and current.rrule
-        and current.recurrence_id
-        and new_rrule is not None
-        and new_rrule != current.rrule
-    ):
-        # Backends such as local_calendar refuse a new rule on a plain series
-        # edit. Editing the first instance with THISANDFUTURE is the RFC 5545
-        # equivalent of editing the whole series.
-        recurrence_id = current.recurrence_id
-        recurrence_range = RECURRENCE_RANGE_THIS_AND_FUTURE
-
     event = _validate_event(merged)
     entity.async_set_context(call.context)
     await _call_backend(
@@ -504,25 +475,42 @@ async def _async_update_event(call: ServiceCall) -> None:
     )
 
 
+def _serialized(
+    handler: Callable[[ServiceCall], Coroutine[Any, Any, None]],
+) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
+    """Run a mutating handler under a per-calendar lock.
+
+    update_event reads, merges and writes; without the lock a concurrent call
+    could write between that read and write and have its change overwritten.
+    """
+
+    async def wrapper(call: ServiceCall) -> None:
+        locks = call.hass.data.setdefault(_LOCKS, defaultdict(asyncio.Lock))
+        async with locks[call.data[ATTR_ENTITY_ID]]:
+            await handler(call)
+
+    return wrapper
+
+
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register the Calendar Actions services."""
     handlers: tuple[tuple[str, Callable[..., Any], Any, SupportsResponse], ...] = (
         (
             SERVICE_CREATE_EVENT,
-            _async_create_event,
+            _serialized(_async_create_event),
             CREATE_EVENT_SCHEMA,
             SupportsResponse.NONE,
         ),
         (
             SERVICE_UPDATE_EVENT,
-            _async_update_event,
+            _serialized(_async_update_event),
             UPDATE_EVENT_SCHEMA,
             SupportsResponse.NONE,
         ),
         (
             SERVICE_DELETE_EVENT,
-            _async_delete_event,
+            _serialized(_async_delete_event),
             DELETE_EVENT_SCHEMA,
             SupportsResponse.NONE,
         ),

@@ -16,7 +16,7 @@ As of Home Assistant 2026.10:
 - **Rejected:** `python_script` (its sandbox blocks `async_*` calls and entity access).
 - **Own domain.** Services are `calendar_actions.*`, not entity services in the `calendar` domain. Their descriptions show in the UI without `async_set_service_schema`, and their names can't collide with future HA services.
 - **Config flow only.** It's a single-instance, no-field config flow so the integration appears in Devices & services. `CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)`. Services are registered in `async_setup`.
-- **Partial update.** `update_event` fetches the current event and merges in the given fields before validating, because the entity API replaces the whole event.
+- **Partial update.** `update_event` fetches the current event and merges in the given fields before validating, because the entity API replaces the whole event. A recurring event is only updated from a known instance (see below).
 - **Minimum Home Assistant 2026.10.0.** Validation uses Probatio (`import probatio`; HA replaced voluptuous in 2026.9).
 
 ## Per-call checks
@@ -34,13 +34,15 @@ Before validation, start and end are parsed and moved to the local time zone. `W
 
 ## update_event lookup and merge
 
-- With `recurrence_id`, the instance is searched within ±2 days of the instant the `recurrence_id` names, then in the wide window (an instance may have been moved).
-- Without `recurrence_id`, the earliest instance in the wide window (now −5 years … now +5 years) stands for the event or series.
-- For a whole-series update whose times come from that instance, or that replaces the rule, the first visible instance must be the real series start. If the gap from the window start to that instance is shorter than the gap between the first two instances, an earlier instance may exist outside the window. The service then raises `series_start_unknown` and asks for `dtstart`/`dtend` rather than truncating the series.
+The entity API (`async_get_events`) exposes instances, not a series' original DTSTART, and a calendar applies a whole-series edit to the start it is given. Inferring the start from the earliest visible instance is unsafe. A deleted first instance (EXDATE) makes a later instance look like the start, so a COUNT series gains an extra date. An old series that started before any search window loses its history. For Local Calendar (`ical` `EventStore.edit`), a whole-series edit also replaces every stored item with that uid, so individually changed (detached) instances disappear. So:
+
+- The current event is found among the instances in the window (now −5 years … now +5 years) with the same `uid`, then by `recurrence_id`.
+- **No `recurrence_id`:** allowed only for a non-recurring event. For a recurring one the service raises `series_update_requires_instance` before any change.
+- **`recurrence_id` alone:** edits that instance. The rule is not sent; Local Calendar rejects a different rule on a single instance.
+- **`recurrence_id` + `THISANDFUTURE`:** `ical` splits the series at that instance and adjusts COUNT. From the true first instance it is a whole-series edit. If that instance is the earliest visible one (possibly the series start) and the series has detached instances (`recurrence_id` set, no `rrule`), the service raises `series_has_changed_instances` before any change. From a later instance, detached instances are kept with their own values.
 - `dtstart` without `dtend` keeps the duration.
-- For a single-instance edit, the rule is not sent. Local Calendar rejects a different rule on a single instance.
-- A changed rule for the whole series is sent as an edit of the first instance with `THISANDFUTURE`. Local Calendar (`ical` `EventStore.edit`) refuses a changed rule on a plain series edit. RFC 5545 treats THISANDFUTURE from the first instance as the whole series, and `ical` handles it that way.
 - A rule can't be removed by omitting it: Local Calendar keeps fields that are not set.
+- Create, update and delete run under a per-calendar `asyncio.Lock`, so a concurrent call can't write between update_event's read and write.
 
 ## Internal APIs
 

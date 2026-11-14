@@ -1,14 +1,22 @@
 """Tests for update_event partial patches."""
 
-from datetime import timedelta
-
 import pytest
-from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import call, create_weekly_series, list_events
+
+
+async def whole_series(hass: HomeAssistant, uid: str) -> dict[str, str]:
+    """Target the whole series: its first instance with THISANDFUTURE."""
+    first = (await list_events(hass))[0]
+    return {
+        "uid": uid,
+        "recurrence_id": first["recurrence_id"],
+        "recurrence_range": "THISANDFUTURE",
+    }
+
 
 SERIES_STARTS = [
     "2026-10-19T19:00:00+02:00",
@@ -18,13 +26,15 @@ SERIES_STARTS = [
 ]
 
 
-async def test_whole_series_patch_keeps_series_start(
+async def test_whole_series_patch_keeps_times(
     hass: HomeAssistant, integration: MockConfigEntry
 ) -> None:
     """Patching only the summary renames every instance and keeps the times."""
     uid = await create_weekly_series(hass)
 
-    await call(hass, "update_event", uid=uid, summary="Swim class")
+    await call(
+        hass, "update_event", **await whole_series(hass, uid), summary="Swim class"
+    )
 
     events = await list_events(hass)
     assert [event["start"] for event in events] == SERIES_STARTS
@@ -39,7 +49,12 @@ async def test_whole_series_new_start_keeps_duration(
     """A new dtstart without dtend moves the series and keeps its duration."""
     uid = await create_weekly_series(hass)
 
-    await call(hass, "update_event", uid=uid, dtstart="2026-10-19T18:00:00+02:00")
+    await call(
+        hass,
+        "update_event",
+        **await whole_series(hass, uid),
+        dtstart="2026-10-19T18:00:00+02:00",
+    )
 
     events = await list_events(hass)
     assert [event["start"][11:16] for event in events] == ["18:00"] * 4
@@ -52,7 +67,12 @@ async def test_whole_series_new_rule(
     """The recurrence rule of a series can be replaced."""
     uid = await create_weekly_series(hass)
 
-    await call(hass, "update_event", uid=uid, rrule="FREQ=WEEKLY;COUNT=2")
+    await call(
+        hass,
+        "update_event",
+        **await whole_series(hass, uid),
+        rrule="FREQ=WEEKLY;COUNT=2",
+    )
 
     events = await list_events(hass)
     assert [event["start"] for event in events] == SERIES_STARTS[:2]
@@ -159,40 +179,6 @@ async def test_single_event_patch(
     ]
 
 
-async def test_series_older_than_window_needs_start(
-    hass: HomeAssistant,
-    integration: MockConfigEntry,
-    freezer: FrozenDateTimeFactory,
-) -> None:
-    """A series that may start before the search window requires dtstart."""
-    await call(
-        hass,
-        "create_event",
-        summary="Bins",
-        dtstart="2026-10-19T07:00:00+02:00",
-        dtend="2026-10-19T07:30:00+02:00",
-        rrule="FREQ=WEEKLY",
-    )
-    uid = (await list_events(hass))[0]["uid"]
-    freezer.tick(timedelta(days=7 * 366))
-
-    with pytest.raises(ServiceValidationError) as err:
-        await call(hass, "update_event", uid=uid, summary="Rubbish")
-    assert err.value.translation_key == "series_start_unknown"
-
-    await call(
-        hass,
-        "update_event",
-        uid=uid,
-        summary="Rubbish",
-        dtstart="2026-10-19T07:00:00+02:00",
-        dtend="2026-10-19T07:30:00+02:00",
-    )
-    events = await list_events(hass)
-    assert events[0]["summary"] == "Rubbish"
-    assert events[0]["start"] == "2026-10-19T07:00:00+02:00"
-
-
 async def test_unknown_uid(hass: HomeAssistant, integration: MockConfigEntry) -> None:
     """Updating a uid that does not exist is a validation error."""
     with pytest.raises(ServiceValidationError) as err:
@@ -219,7 +205,7 @@ async def test_whole_series_new_rule_with_new_start(
     await call(
         hass,
         "update_event",
-        uid=uid,
+        **await whole_series(hass, uid),
         dtstart="2026-10-20T19:00:00+02:00",
         rrule="FREQ=WEEKLY;BYDAY=TU;COUNT=2",
     )
@@ -236,8 +222,13 @@ async def test_empty_string_clears_field(
 ) -> None:
     """An empty description clears it on the whole series."""
     uid = await create_weekly_series(hass)
-    await call(hass, "update_event", uid=uid, description="Bring goggles")
+    await call(
+        hass,
+        "update_event",
+        **await whole_series(hass, uid),
+        description="Bring goggles",
+    )
     assert {e.get("description") for e in await list_events(hass)} == {"Bring goggles"}
 
-    await call(hass, "update_event", uid=uid, description="")
+    await call(hass, "update_event", **await whole_series(hass, uid), description="")
     assert {e.get("description") for e in await list_events(hass)} <= {None, ""}
